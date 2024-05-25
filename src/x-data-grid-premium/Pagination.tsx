@@ -10,7 +10,10 @@ export const Pagination = ({
   onPageChange: (page: number) => void;
 }) => {
   return (
-    <div>
+    <div style={{
+      display: 'flex',
+      gap: 10
+    }}>
       <button
         onClick={() => {
           if (page === min) {
@@ -21,12 +24,10 @@ export const Pagination = ({
       >
         &lt;
       </button>
-      <span>&nbsp;Page&nbsp;</span>
-      <span>{page}</span>
 
-      <span>&nbsp;out of {max}&nbsp;</span>
       <button
         onClick={() => {
+          console.log('page',page, max)
           if (page >= max) {
             return;
           }

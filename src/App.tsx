@@ -7,10 +7,7 @@ import {
   useGridApiRef,
   GridValidRowModel,
   GridPaginationModel,
-} from "./DataGridPremium.tsx";
-
-import { Pagination } from "./Pagination.tsx";
-import { HelperPaginationText } from "./HelperPaginationText.tsx";
+} from "./x-data-grid-premium";
 
 import {
   useEffect,
@@ -26,7 +23,7 @@ import {
 //   createBrowserRouter,
 //   RouterProvider,
 //   useSearchParams,
-// } from "./simple-react-router.tsx";
+// } from "./react-router/react-router.tsx";
 
 import {
   createBrowserRouter,
@@ -35,7 +32,7 @@ import {
 } from "react-router-dom";
 
 const MAX_ERROR_THROWN = 100;
-const thrownErrorAmount = 0;
+let thrownErrorAmount = 0;
 enum SearchParams {
   Page = "page",
   PageSize = "pageSize",
@@ -71,19 +68,12 @@ const fetchRows = async (params: {
     data: limit === 0 ? rows : rows.slice(offset, offset + limit),
   };
 };
-
-const styles = {
-  paginationWrapper: {
-    marginBottom: 10,
-  },
-  paginationContainer: { display: "flex", gap: 20 },
-};
-
 export const HomePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const setPaginationModel = useCallback(
     (model: GridPaginationModel) => {
+      console.log('pagination model changed', model)
       const { page, pageSize } = model;
       searchParams.set(SearchParams.Page, page + "");
       searchParams.set(SearchParams.PageSize, pageSize + "");
@@ -103,26 +93,15 @@ export const HomePage = () => {
     [page, pageSize],
   );
 
-  const goToPage = (page: number) => {
-    searchParams.set(SearchParams.Page, page + "");
-    setSearchParams(searchParams);
-  };
-
   const [data, setData] = useState<Data | null>(null);
   const [previousData, setPreviousData] = useState<Data | null>(null);
 
-  const [loading, setLoading] = useState(false);
-
   useEffect(() => {
-    setLoading(true);
     fetchRows({
       offset: page * pageSize,
       limit: pageSize,
     })
       .then(setData)
-      .finally(() => {
-        setLoading(false);
-      });
   }, [page, pageSize]);
 
   if (data !== null && !Object.is(previousData, data)) {
@@ -132,22 +111,20 @@ export const HomePage = () => {
   const rows = (data || previousData)?.data || [];
   const rowCount = (data || previousData)?.count || 0;
 
-  const totalPages = pageSize ? Math.ceil(rowCount / pageSize) : 1;
-
   const columns: GridColDef[] = useMemo(
     () => [
       {
         field: "col1",
         headerName: "Column 1",
-        // renderHeaderFilter: () => {
-        //   // I added this check to prevent your browser from crushing
-        //   if (thrownErrorAmount < MAX_ERROR_THROWN) {
-        //     thrownErrorAmount++;
-        //     throw new Error("some error during rendering");
-        //   }
+        renderHeader: () => {
+          // I added this check to prevent your browser from crushing
+          if (thrownErrorAmount < MAX_ERROR_THROWN) {
+            thrownErrorAmount++;
+            throw new Error("some error during rendering");
+          }
 
-        //   return <div style={{ color: "red" }}>I was causing infinte loop</div>;
-        // },
+          return <div style={{ color: "red" }}>I was causing infinte loop</div>;
+        },
       },
       { field: "col2", headerName: "Column 2" },
     ],
@@ -157,42 +134,32 @@ export const HomePage = () => {
   const apiRef = useGridApiRef();
 
   useLayoutEffect(() => {
-    return apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
-      const nextPaginationModel = {
+    const unsub = apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
+      console.log('viewportInnerSizeChange fired')
+      const dimensions = apiRef.current.getDimensions();
+
+      setPaginationModel({
         page,
-        pageSize: computePageSize(apiRef.current.getDimensions()),
-      };
-      console.log("nextPaginationModel", nextPaginationModel);
-      setPaginationModel(nextPaginationModel);
+        pageSize: computePageSize(dimensions),
+      });
     });
+    return () => {
+      unsub()
+    }
   }, [apiRef, page, setPaginationModel]);
 
   return (
     <div>
-      <div style={styles.paginationWrapper}>
-        {!!rowCount && (
-          <div style={styles.paginationContainer}>
-            <Pagination
-              max={totalPages}
-              page={page + 1}
-              onPageChange={(page) => goToPage(page - 1)}
-            />
-            <HelperPaginationText
-              count={rowCount}
-              page={page + 1}
-              pageSize={pageSize || rowCount}
-            />
-          </div>
-        )}
-      </div>
-
       <DataGridPremium
         style={{
           height: "300px",
         }}
+        rowCount={rowCount}
+        pagination
+        paginationMode={"server"}
         apiRef={apiRef}
-        //paginationModel={paginationModel}
-        //onPaginationModelChange={setPaginationModel}
+        paginationModel={paginationModel}
+        onPaginationModelChange={setPaginationModel}
         rows={rows}
         columns={columns}
       />
