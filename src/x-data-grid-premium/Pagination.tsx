@@ -15,6 +15,7 @@ export const Pagination = ({
       gap: 10
     }}>
       <button
+        disabled={page===min}
         onClick={() => {
           if (page === min) {
             return;
@@ -26,8 +27,8 @@ export const Pagination = ({
       </button>
 
       <button
+        disabled={page>=max}
         onClick={() => {
-          console.log('page',page, max)
           if (page >= max) {
             return;
           }

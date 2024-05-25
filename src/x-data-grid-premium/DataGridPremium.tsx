@@ -7,7 +7,7 @@ import {
   useState,
   useRef,
   useCallback,
-  MutableRefObject, useEffect, ReactNode,
+  MutableRefObject, useEffect, ReactNode, PropsWithChildren,
 } from "react";
 import {Pagination} from "./Pagination.tsx";
 import {useGridApiRef} from "./useGridApiRef.ts";
@@ -60,7 +60,7 @@ export type GridState = {
 export type GridApi = {
   state: GridState;
   setState: (state: GridState | {(state: GridState): GridState}) => void;
-  getDimensions: () => GridDimensions;
+  getRootDimensions: () => GridDimensions;
   getContainerProps: () => {
     ref: MutableRefObject<HTMLDivElement | null>
   };
@@ -78,12 +78,13 @@ export type GridApi = {
 };
 
 type RowsMeta = {
-  currentTotalPageHeight: number;
+  currentPageTotalHeight: number;
 }
 
 const COLUMN_WIDTH = 150;
 const ROW_HEIGHT = 52;
 const HEADER_HEIGHT = 52;
+const FOOTER_HEIGHT = 52;
 
 type PaginationModel = 'client' | 'server'
 
@@ -136,7 +137,7 @@ export const DataGridPremium = (props: DataGridProps) => {
           }
         },
         rowsMeta: {
-          currentTotalPageHeight: 0
+          currentPageTotalHeight: 0
         },
         dimensions: {
           rowHeight: ROW_HEIGHT,
@@ -145,7 +146,7 @@ export const DataGridPremium = (props: DataGridProps) => {
           viewportOuterSize: EMPTY_SIZE,
         }
       },
-      getDimensions: () => apiRef.current.state.dimensions,
+      getRootDimensions: () => apiRef.current.state.dimensions,
       eventManager: new EventManager(),
       publishEvent: (eventName, ...args) => {
         apiRef.current.eventManager.emit(eventName, ...args);
@@ -190,68 +191,71 @@ export const DataGridPremium = (props: DataGridProps) => {
   }, [apiRef])
 
   return (
-    <div
-      style={{
-        ...styles.container,
-        ...style,
-      }}
-    >
-      <div style={styles.headerRow}>
-        {columns.map((column) => (
-          <div
-            style={{
-              ...styles.header,
-              height: dimensions.headerHeight,
-              width: COLUMN_WIDTH,
-            }}
-            key={column.field}
-          >
-            {column.renderHeader ? column.renderHeader(column): column.headerName}
-          </div>
-        ))}
-      </div>
-      <div style={{
-        ...styles.body
-      }} {...apiRef.current.getContainerProps()}>
-        {rows.map((row) => (
-          <div
-            style={{
-              ...styles.row,
-              height: dimensions.rowHeight,
-            }}
-            key={row.id}
-          >
-            {columns.map((column) => (
-              <div
-                style={{
-                  ...styles.cell,
-                  width: COLUMN_WIDTH
-                }}
-                key={column.field}
-              >
-                {row[column.field]}
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-      <div style={styles.footer}>
-        {!!rowCount && (
-          <div style={styles.paginationContainer}>
-            <div>
-               {(page) * pageSize + 1}-{Math.min(rowCount, (page + 1) * pageSize)} of
-              of {rowCount} &nbsp;
+    <GridRoot>
+      <div
+        style={{
+          ...styles.container,
+          ...style,
+        }}
+        {...apiRef.current.getContainerProps()}
+      >
+        <div style={styles.headerRow}>
+          {columns.map((column) => (
+            <div
+              style={{
+                ...styles.header,
+                height: dimensions.headerHeight,
+                width: COLUMN_WIDTH,
+              }}
+              key={column.field}
+            >
+              {column.renderHeader ? column.renderHeader(column): column.headerName}
             </div>
+          ))}
+        </div>
+        <div style={{
+          ...styles.body
+        }}>
+          {rows.map((row) => (
+            <div
+              style={{
+                ...styles.row,
+                height: dimensions.rowHeight,
+              }}
+              key={row.id}
+            >
+              {columns.map((column) => (
+                <div
+                  style={{
+                    ...styles.cell,
+                    width: COLUMN_WIDTH
+                  }}
+                  key={column.field}
+                >
+                  {row[column.field]}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+        <div style={styles.footer}>
+          {!!rowCount && (
+            <div style={styles.paginationContainer}>
+              <div>
+                {(page) * pageSize + 1}-{Math.min(rowCount, (page + 1) * pageSize)} of
+                of {rowCount} &nbsp;
+              </div>
 
-            <Pagination
-              max={totalPages}
-              page={page + 1}
-              onPageChange={(page) => setPage(page - 1)}
-            />
-          </div>
-        )}
+              <Pagination
+                max={totalPages}
+                page={page + 1}
+                onPageChange={(page) => setPage(page - 1)}
+              />
+            </div>
+          )}
+        </div>
       </div>
-    </div>
+    </GridRoot>
   );
 };
 
@@ -289,8 +293,23 @@ const useVirtualScroller = (apiRef: MutableRefObject<GridApi>) => {
 
   useLayoutEffect(() => {
     apiRef.current.resize();
-  }, [apiRef, rowsMeta.currentTotalPageHeight]);
+  }, [apiRef, rowsMeta.currentPageTotalHeight]);
   // ----
+}
+
+const useEnhancedEffect = typeof window !== 'undefined' ? useLayoutEffect: useEffect;
+
+const GridRoot = ({children}: PropsWithChildren) => {
+  // Our implementation of <NoSsr />
+  const [mountedState, setMountedState] = useState(false);
+  useEnhancedEffect(() => {
+    setMountedState(true);
+  }, []);
+
+  if (!mountedState) {
+    return null;
+  }
+  return children;
 }
 
 const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
@@ -298,6 +317,7 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
   const previousSize = useRef<ElementSize>();
   const rootDimensionsRef = useRef(EMPTY_SIZE);
   const {ref: bodyRef} = apiRef.current.getContainerProps();
+  const rowsMeta = apiRef.current.state.rowsMeta;
 
   const handleResize = useCallback((size: ElementSize) => {
     rootDimensionsRef.current = size;
@@ -335,7 +355,7 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
 
     const viewportInnerSize = {
       width: Math.max(0, viewportOuterSize.width),
-      height: Math.max(0, viewportOuterSize.height),
+      height: Math.max(0, viewportOuterSize.height - HEADER_HEIGHT - FOOTER_HEIGHT),
     }
 
     const newDimensions: GridDimensions = {
@@ -345,7 +365,7 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
       viewportInnerSize,
     };
 
-    const prevDimensions = apiRef.current.getDimensions();
+    const prevDimensions = apiRef.current.getRootDimensions();
     apiRef.current.setState((state) =>({
       ...state,
       dimensions: newDimensions
@@ -357,7 +377,6 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
         prevDimensions.viewportInnerSize,
       )
     ) {
-      console.log('emit viewportInnerSizeChange event')
       apiRef.current.publishEvent(
         "viewportInnerSizeChange",
         newDimensions.viewportInnerSize,
@@ -365,7 +384,7 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
     }
 
     apiRef.current.forceRerender();
-  }, [apiRef]);
+  }, [apiRef, rowsMeta.currentPageTotalHeight]);
 
   apiRef.current.resize = resize;
 
@@ -384,7 +403,7 @@ const useGridRowsMeta = (apiRef: MutableRefObject<GridApi>, props: DataGridProps
     apiRef.current.setState(state => ({
       ...state,
       rowsMeta: {
-        currentTotalPageHeight: rows.length * ROW_HEIGHT,
+        currentPageTotalHeight: rows.length * ROW_HEIGHT,
       }
     }))
   }, [apiRef, rows])
@@ -392,9 +411,9 @@ const useGridRowsMeta = (apiRef: MutableRefObject<GridApi>, props: DataGridProps
   useEffect(() => {
     hydrateRowsMeta();
   }, [hydrateRowsMeta]);
-  // rowHeight, filterModel, paginationState, sortModel, additional deps
-  //----
 }
+
+
 
 const styles = {
   container: {
@@ -444,7 +463,7 @@ const styles = {
     alignItems: 'center',
     display: 'flex',
     borderTop: "1px solid black",
-    height: 52
+    height: FOOTER_HEIGHT
   }
 } as const;
 

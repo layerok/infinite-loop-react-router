@@ -9,6 +9,7 @@ import {
   GridPaginationModel,
 } from "./x-data-grid-premium";
 
+
 import {
   useEffect,
   useState,
@@ -136,7 +137,7 @@ export const HomePage = () => {
   useLayoutEffect(() => {
     const unsub = apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
       console.log('viewportInnerSizeChange fired')
-      const dimensions = apiRef.current.getDimensions();
+      const dimensions = apiRef.current.getRootDimensions();
 
       setPaginationModel({
         page,
