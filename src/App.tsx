@@ -13,7 +13,7 @@ import {
   useState,
   useCallback,
   useMemo,
-  useLayoutEffect,
+  useLayoutEffect, useRef,
 } from "react";
 
 // simplified implementation of react router to create minimal reproducible example
@@ -132,16 +132,40 @@ export const HomePage = () => {
   const apiRef = useGridApiRef();
 
   useLayoutEffect(function subscribeViewportInnerSizeChangeEffect()  {
-    return  apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
+    let timeoutId: NodeJS.Timeout | undefined;
+    const disposer = apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
       console.log('viewportInnerSizeChange fired')
       const dimensions = apiRef.current.getRootDimensions();
 
-      setPaginationModel({
-        page,
-        pageSize: computePageSize(dimensions),
-      });
+      clearTimeout(timeoutId);
+
+      timeoutId = setTimeout(() => {
+        setPaginationModel({
+          page,
+          pageSize: computePageSize(dimensions),
+        });
+      },100)
+
     });
+    return () => {
+      disposer();
+      clearTimeout(timeoutId);
+    }
   }, [apiRef, page, setPaginationModel]);
+
+  const timeout = useRef<NodeJS.Timeout>();
+
+  useEffect(() => {
+    return () => {
+      clearTimeout(timeout.current)
+    }
+  }, []);
+
+  const handlePaginationModelChange = useCallback((model: GridPaginationModel) => {
+    timeout.current = setTimeout(() => {
+      setPaginationModel(model);
+    },200)
+  }, [setPaginationModel])
 
   return (
     <div>
@@ -154,7 +178,7 @@ export const HomePage = () => {
         paginationMode={"server"}
         paginationModel={paginationModel}
         apiRef={apiRef}
-        onPaginationModelChange={setPaginationModel}
+        onPaginationModelChange={handlePaginationModelChange}
         rows={rows}
         columns={columns}
       />

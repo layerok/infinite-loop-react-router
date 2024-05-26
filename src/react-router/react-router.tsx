@@ -73,7 +73,6 @@ export const createBrowserRouter = (routes: RouteObject[]): Router => {
     if (state.match?.loader) {
       await state.match.loader();
     }
-    await Promise.resolve();
     completeNavigation(to);
   };
   const completeNavigation = (to: To) => {
