@@ -1,5 +1,3 @@
-import "./App.css";
-
 import {
   DataGridPremium,
   GridDimensions,
@@ -18,19 +16,18 @@ import {
   useLayoutEffect,
 } from "react";
 
-// simplified implementation of react router to demonstrate
-// what causing the infinite loop
-// import {
-//   createBrowserRouter,
-//   RouterProvider,
-//   useSearchParams,
-// } from "./react-router/react-router.tsx";
-
+// simplified implementation of react router to create minimal reproducible example
 import {
   createBrowserRouter,
   RouterProvider,
   useSearchParams,
-} from "react-router-dom";
+} from "./react-router/react-router.tsx";
+
+// import {
+//   createBrowserRouter,
+//   RouterProvider,
+//   useSearchParams,
+// } from "react-router-dom";
 
 const MAX_ERROR_THROWN = 100;
 let thrownErrorAmount = 0;
@@ -38,6 +35,23 @@ enum SearchParams {
   Page = "page",
   PageSize = "pageSize",
 }
+
+const columns: GridColDef[] = [
+  {
+    field: "col1",
+    headerName: "Column 1",
+    renderHeader: () => {
+      // I added this check to prevent your browser from crushing
+      if (thrownErrorAmount < MAX_ERROR_THROWN) {
+        thrownErrorAmount++;
+        throw new Error("some error during rendering");
+      }
+
+      return <div style={{ color: "red" }}>I was causing infinte loop</div>;
+    },
+  },
+  { field: "col2", headerName: "Column 2" },
+]
 
 const rows: GridValidRowModel[] = [
   { id: 1, col1: "Hello", col2: "World" },
@@ -56,12 +70,16 @@ type Data = {
   count: number;
 };
 
+const wait = async (ms: number) => {
+  await new Promise((resolve) => setTimeout(() => resolve(true), ms));
+}
+
 const fetchRows = async (params: {
   offset: number;
   limit: number;
 }): Promise<Data> => {
   // simulate server response
-  await new Promise((resolve) => setTimeout(() => resolve(true), 1000));
+  await wait(500);
   const { offset, limit } = params;
 
   return {
@@ -73,8 +91,7 @@ export const HomePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const setPaginationModel = useCallback(
-    (model: GridPaginationModel) => {
-      console.log('pagination model changed', model)
+    function setPaginationModel(model: GridPaginationModel)  {
       const { page, pageSize } = model;
       searchParams.set(SearchParams.Page, page + "");
       searchParams.set(SearchParams.PageSize, pageSize + "");
@@ -97,7 +114,7 @@ export const HomePage = () => {
   const [data, setData] = useState<Data | null>(null);
   const [previousData, setPreviousData] = useState<Data | null>(null);
 
-  useEffect(() => {
+  useEffect(function fetchRowsEffect()  {
     fetchRows({
       offset: page * pageSize,
       limit: pageSize,
@@ -112,30 +129,10 @@ export const HomePage = () => {
   const rows = (data || previousData)?.data || [];
   const rowCount = (data || previousData)?.count || 0;
 
-  const columns: GridColDef[] = useMemo(
-    () => [
-      {
-        field: "col1",
-        headerName: "Column 1",
-        renderHeader: () => {
-          // I added this check to prevent your browser from crushing
-          if (thrownErrorAmount < MAX_ERROR_THROWN) {
-            thrownErrorAmount++;
-            throw new Error("some error during rendering");
-          }
-
-          return <div style={{ color: "red" }}>I was causing infinte loop</div>;
-        },
-      },
-      { field: "col2", headerName: "Column 2" },
-    ],
-    [],
-  );
-
   const apiRef = useGridApiRef();
 
-  useLayoutEffect(() => {
-    const unsub = apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
+  useLayoutEffect(function subscribeViewportInnerSizeChangeEffect()  {
+    return  apiRef.current?.subscribeEvent("viewportInnerSizeChange", () => {
       console.log('viewportInnerSizeChange fired')
       const dimensions = apiRef.current.getRootDimensions();
 
@@ -144,9 +141,6 @@ export const HomePage = () => {
         pageSize: computePageSize(dimensions),
       });
     });
-    return () => {
-      unsub()
-    }
   }, [apiRef, page, setPaginationModel]);
 
   return (
@@ -158,8 +152,8 @@ export const HomePage = () => {
         rowCount={rowCount}
         pagination
         paginationMode={"server"}
-        apiRef={apiRef}
         paginationModel={paginationModel}
+        apiRef={apiRef}
         onPaginationModelChange={setPaginationModel}
         rows={rows}
         columns={columns}

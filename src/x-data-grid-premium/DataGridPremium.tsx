@@ -1,21 +1,24 @@
 import { ElementSize, useResizeObserver } from "@mui/x-data-grid-premium";
-import {ownerWindow} from "@mui/material";
+import { ownerWindow} from "@mui/material";
 import { EventManager } from "./EventManager";
-import {
+import React, {
   HTMLAttributes,
   useLayoutEffect,
   useState,
   useRef,
   useCallback,
-  MutableRefObject, useEffect, ReactNode, PropsWithChildren,
+  MutableRefObject, useEffect, ReactNode, PropsWithChildren, forwardRef,
 } from "react";
 import {Pagination} from "./Pagination.tsx";
 import {useGridApiRef} from "./useGridApiRef.ts";
 import {useForceRerender} from "./useForceRerender.ts";
+import {GridApiContext, GridRootPropsContext} from "./context.ts";
+import {useGridRootProps} from "./useGridRootProps.ts";
+import {useGridApiContext} from "./useGridApiContext.ts";
 
 const EMPTY_SIZE: ElementSize = { width: 0, height: 0 };
 
-const isElementSizesEqual = (a: ElementSize, b: ElementSize) => {
+const areElementSizesEqual = (a: ElementSize, b: ElementSize) => {
   return a.width === b.width && a.height === b.height;
 };
 
@@ -48,9 +51,7 @@ type EventMap = {
 
 type Disposer = () => void;
 
-
 export type GridState = {
-  rowsMeta: RowsMeta;
   dimensions: GridDimensions;
   pagination: {
     paginationModel: GridPaginationModel;
@@ -58,12 +59,10 @@ export type GridState = {
 }
 
 export type GridApi = {
+  mainElementRef: MutableRefObject<HTMLDivElement | null>;
   state: GridState;
   setState: (state: GridState | {(state: GridState): GridState}) => void;
   getRootDimensions: () => GridDimensions;
-  getContainerProps: () => {
-    ref: MutableRefObject<HTMLDivElement | null>
-  };
   resize: () => void;
   eventManager: EventManager;
   forceRerender: () => void;
@@ -77,9 +76,6 @@ export type GridApi = {
   ) => Disposer;
 };
 
-type RowsMeta = {
-  currentPageTotalHeight: number;
-}
 
 const COLUMN_WIDTH = 150;
 const ROW_HEIGHT = 52;
@@ -87,7 +83,6 @@ const HEADER_HEIGHT = 52;
 const FOOTER_HEIGHT = 52;
 
 type PaginationModel = 'client' | 'server'
-
 
 export type DataGridProps = {
   columns: GridColDef[];
@@ -97,17 +92,15 @@ export type DataGridProps = {
   onPaginationModelChange?: (model: GridPaginationModel) => void;
   rowCount?: number;
   pagination?: boolean;
-  hideFooter?: boolean;
-  hideFooterPagination?: boolean;
   paginationMode?: PaginationModel
 } & HTMLAttributes<HTMLDivElement>;
 
-export const DataGridPremium = (props: DataGridProps) => {
-  const { columns, rows, style, apiRef: apiRefProp, onPaginationModelChange } = props;
+export const DataGridPremiumRaw = forwardRef(function DataGridPremiumRaw(props: DataGridProps)  {
+  const {apiRef: apiRefProp, onPaginationModelChange } = props;
   const localApiRef = useGridApiRef();
   const apiRef = apiRefProp || localApiRef;
   const forceRerender = useForceRerender();
-  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const mainRef = useRef<HTMLDivElement | null>(null);
 
   if (Object.keys(apiRef.current).length === 0) {
     const setState: GridApi['setState'] =  (state) => {
@@ -123,10 +116,8 @@ export const DataGridPremium = (props: DataGridProps) => {
       apiRef.current.state = nextState;
     }
     apiRef.current = {
+      mainElementRef: mainRef,
       resize: () => {},
-      getContainerProps: () => ({
-        ref: bodyRef
-      }),
       forceRerender: forceRerender,
       setState,
       state: {
@@ -135,9 +126,6 @@ export const DataGridPremium = (props: DataGridProps) => {
             page: 0,
             pageSize: 100
           }
-        },
-        rowsMeta: {
-          currentPageTotalHeight: 0
         },
         dimensions: {
           rowHeight: ROW_HEIGHT,
@@ -162,21 +150,35 @@ export const DataGridPremium = (props: DataGridProps) => {
 
   useGridPagination(apiRef, props);
 
-  useGridRowsMeta(apiRef, props);
 
   useGridDimensions(apiRef)
 
-  useVirtualScroller(apiRef)
+  return (
+    <GridApiContext.Provider value={apiRef}>
+      <GridRootPropsContext.Provider value={props}>
+        <GridRoot>
+          <GridVirtualScroller/>
+        </GridRoot>
+      </GridRootPropsContext.Provider>
+    </GridApiContext.Provider>
+  );
+});
 
+export const DataGridPremium = React.memo(DataGridPremiumRaw)
+
+
+const GridVirtualScroller = (props: PropsWithChildren) => {
+  const {children} = props;
+  const apiRef = useGridApiContext();
+  const rootProps = useGridRootProps();
   const dimensions = apiRef.current.state.dimensions;
-
   const {pageSize, page} = apiRef.current.state.pagination.paginationModel;
 
-  const rowCount = Math.ceil(props.rowCount || 0);
+  const rowCount = Math.ceil(rootProps.rowCount || 0);
 
   const totalPages = pageSize ? Math.ceil(rowCount / pageSize) : 1;
 
-  const setPage = useCallback((page: number) => {
+  const setPage = useCallback(function setPage(page: number)  {
     apiRef.current.setState(state => ({
       ...state,
       pagination: {
@@ -190,79 +192,83 @@ export const DataGridPremium = (props: DataGridProps) => {
     apiRef.current.forceRerender();
   }, [apiRef])
 
-  return (
-    <GridRoot>
-      <div
-        style={{
-          ...styles.container,
-          ...style,
-        }}
-        {...apiRef.current.getContainerProps()}
-      >
-        <div style={styles.headerRow}>
-          {columns.map((column) => (
+  const {getContainerProps} = useGridVirtualScroller(apiRef)
+
+  return <div
+    style={{
+      ...styles.container,
+      ...rootProps.style,
+    }}
+    {...getContainerProps()}
+  >
+
+    <div style={styles.headerRow}>
+      {rootProps.columns.map((colDef) => (
+        <div
+          style={{
+            ...styles.header,
+            height: apiRef.current.state.dimensions.headerHeight,
+            width: COLUMN_WIDTH,
+          }}
+          key={colDef.field}
+        >
+          {colDef.renderHeader ? colDef.renderHeader(colDef): colDef.headerName}
+        </div>
+      ))}
+    </div>
+
+
+    <div style={{
+      ...styles.body
+    }}>
+      {rootProps.rows.map((row) => (
+        <div
+          style={{
+            ...styles.row,
+            height: dimensions.rowHeight,
+          }}
+          key={row.id}
+        >
+          {rootProps.columns.map((column) => (
             <div
               style={{
-                ...styles.header,
-                height: dimensions.headerHeight,
-                width: COLUMN_WIDTH,
+                ...styles.cell,
+                width: COLUMN_WIDTH
               }}
               key={column.field}
             >
-              {column.renderHeader ? column.renderHeader(column): column.headerName}
+              {row[column.field]}
             </div>
           ))}
         </div>
-        <div style={{
-          ...styles.body
-        }}>
-          {rows.map((row) => (
-            <div
-              style={{
-                ...styles.row,
-                height: dimensions.rowHeight,
-              }}
-              key={row.id}
-            >
-              {columns.map((column) => (
-                <div
-                  style={{
-                    ...styles.cell,
-                    width: COLUMN_WIDTH
-                  }}
-                  key={column.field}
-                >
-                  {row[column.field]}
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-        <div style={styles.footer}>
-          {!!rowCount && (
-            <div style={styles.paginationContainer}>
-              <div>
-                {(page) * pageSize + 1}-{Math.min(rowCount, (page + 1) * pageSize)} of
-                of {rowCount} &nbsp;
-              </div>
+      ))}
+    </div>
+    <div style={styles.footer}>
+      {!!rowCount && (
+        <div style={styles.paginationContainer}>
+          <div>
+            {(page) * pageSize + 1}-{Math.min(rowCount, (page + 1) * pageSize)} of
+            of {rowCount} &nbsp;
+          </div>
 
-              <Pagination
-                max={totalPages}
-                page={page + 1}
-                onPageChange={(page) => setPage(page - 1)}
-              />
-            </div>
-          )}
+          <Pagination
+            max={totalPages}
+            page={page + 1}
+            onPageChange={(page) => setPage(page - 1)}
+          />
         </div>
-      </div>
-    </GridRoot>
-  );
-};
+      )}
+    </div>
+    {children}
+  </div>
+}
+
+
 
 const useGridPagination = (apiRef: MutableRefObject<GridApi>,  props: DataGridProps) => {
   const {paginationModel} = props;
 
-  const setPaginationModel = useCallback((model: GridPaginationModel) => {
+  const setPaginationModel = useCallback(function setPaginationModel(model: GridPaginationModel)  {
     apiRef.current.setState((state) => ({
       ...state,
       pagination: {
@@ -275,7 +281,7 @@ const useGridPagination = (apiRef: MutableRefObject<GridApi>,  props: DataGridPr
     }));
   }, [apiRef])
   // inside useGridPagination
-  useEffect(() => {
+  useEffect(function syncPaginationModelEffect()  {
     if(paginationModel) {
       setPaginationModel(paginationModel);
     }
@@ -283,26 +289,29 @@ const useGridPagination = (apiRef: MutableRefObject<GridApi>,  props: DataGridPr
   // ----
 }
 
-const useVirtualScroller = (apiRef: MutableRefObject<GridApi>) => {
-  const rowsMeta = apiRef.current.state.rowsMeta;
-  const {ref: bodyRef} = apiRef.current.getContainerProps();
-  // inside useVirtualScroller
-  useResizeObserver(bodyRef, () => {
+const useGridVirtualScroller = (apiRef: MutableRefObject<GridApi>) => {
+
+  const mainRef = apiRef.current.mainElementRef;
+
+  useResizeObserver(mainRef, () => {
     apiRef.current.resize();
   });
 
-  useLayoutEffect(() => {
+  useLayoutEffect(function resizeLayoutEffect()  {
     apiRef.current.resize();
-  }, [apiRef, rowsMeta.currentPageTotalHeight]);
-  // ----
-}
+  }, [apiRef]);
 
-const useEnhancedEffect = typeof window !== 'undefined' ? useLayoutEffect: useEffect;
+  return {
+    getContainerProps: () => ({
+      ref: mainRef
+    })
+  }
+}
 
 const GridRoot = ({children}: PropsWithChildren) => {
   // Our implementation of <NoSsr />
   const [mountedState, setMountedState] = useState(false);
-  useEnhancedEffect(() => {
+  useLayoutEffect(function noSsrLayoutEffect()  {
     setMountedState(true);
   }, []);
 
@@ -316,16 +325,15 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
   const [savedSize, setSavedSize] = useState<ElementSize>();
   const previousSize = useRef<ElementSize>();
   const rootDimensionsRef = useRef(EMPTY_SIZE);
-  const {ref: bodyRef} = apiRef.current.getContainerProps();
-  const rowsMeta = apiRef.current.state.rowsMeta;
 
-  const handleResize = useCallback((size: ElementSize) => {
+
+  const handleResize = useCallback(function handleResize(size: ElementSize)  {
     rootDimensionsRef.current = size;
     setSavedSize(size);
   }, []);
 
-  const resize = useCallback(() => {
-    const element = bodyRef.current;
+  const resize = useCallback(function resize()  {
+    const element = apiRef.current.mainElementRef.current;
     if (!element) {
       return;
     }
@@ -344,9 +352,9 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
       handleResize(size);
       previousSize.current = size;
     }
-  }, [handleResize, bodyRef]);
+  }, [apiRef, handleResize]);
 
-  const updateDimensions = useCallback(() => {
+  const updateDimensions = useCallback(function updateDimensions()  {
 
     const viewportOuterSize = {
       width: rootDimensionsRef.current.width,
@@ -372,7 +380,7 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
     }))
 
     if (
-      !isElementSizesEqual(
+      !areElementSizesEqual(
         newDimensions.viewportInnerSize,
         prevDimensions.viewportInnerSize,
       )
@@ -384,36 +392,20 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
     }
 
     apiRef.current.forceRerender();
-  }, [apiRef, rowsMeta.currentPageTotalHeight]);
+  }, [apiRef]);
 
   apiRef.current.resize = resize;
 
-  useLayoutEffect(() => {
+  useLayoutEffect(function layoutEffectSavedSize()  {
     if (savedSize) {
       updateDimensions();
     }
   }, [savedSize, updateDimensions]);
 
-  useLayoutEffect(updateDimensions, [updateDimensions]);
+  useLayoutEffect(function layoutEffectUpdateDimensions()  {
+    updateDimensions()
+  }, [updateDimensions]);
 }
-
-const useGridRowsMeta = (apiRef: MutableRefObject<GridApi>, props: DataGridProps) => {
-  const {rows} = props;
-  const hydrateRowsMeta = useCallback(() => {
-    apiRef.current.setState(state => ({
-      ...state,
-      rowsMeta: {
-        currentPageTotalHeight: rows.length * ROW_HEIGHT,
-      }
-    }))
-  }, [apiRef, rows])
-
-  useEffect(() => {
-    hydrateRowsMeta();
-  }, [hydrateRowsMeta]);
-}
-
-
 
 const styles = {
   container: {
@@ -422,29 +414,9 @@ const styles = {
     display: 'flex',
     flexDirection: 'column'
   },
-  headerRow: {
-    display: "flex",
-    borderBottom: "1px solid black",
-  },
-  headerFilterRow: {
-    display: "flex",
-    borderBottom: "1px solid black",
-  },
   body: {
     flexGrow: 1,
     minHeight: 0
-  },
-  header: {
-    display: "flex",
-    alignItems: "center",
-    padding: "0 10px",
-    borderRight: "1px solid black",
-  },
-  headerFilter: {
-    display: "flex",
-    alignItems: "center",
-    padding: "0 10px",
-    borderRight: "1px solid black",
   },
   row: {
     display: "flex",
@@ -464,6 +436,16 @@ const styles = {
     display: 'flex',
     borderTop: "1px solid black",
     height: FOOTER_HEIGHT
-  }
+  },
+  headerRow: {
+    display: "flex",
+    borderBottom: "1px solid black",
+  },
+  header: {
+    display: "flex",
+    alignItems: "center",
+    padding: "0 10px",
+    borderRight: "1px solid black",
+  },
 } as const;
 
