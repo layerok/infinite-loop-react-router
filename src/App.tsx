@@ -8,23 +8,24 @@ import {
 import {
   createBrowserRouter,
   RouterProvider,
-  useSearchParams,
+  useNavigate,
 } from "react-router-dom";
 
 const MAX_ERROR_THROWN = 100;
 let thrownErrorAmount = 0;
 
 export const HomePage = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   useEffect(() => {
     //const timeout = setTimeout(() => {
-      searchParams.set('page', "1")
-      setSearchParams(searchParams)
+      navigate({
+        search: "?page=2"
+      })
     //})
     return () => {
       //clearTimeout(timeout)
     }
-  }, [setSearchParams, searchParams]);
+  }, [navigate]);
 
   return (
     <NoSsr>
@@ -58,7 +59,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <HomePage />,
     loader: async () => {
-      // remove this loader to prevent infinite loop
+      // infinite loop doesn't occur without loaders
       return null;
     },
   },
