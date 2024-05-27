@@ -17,12 +17,12 @@ let thrownErrorAmount = 0;
 export const HomePage = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   useEffect(() => {
-    const timeout = setTimeout(() => {
+    //const timeout = setTimeout(() => {
       searchParams.set('page', "1")
       setSearchParams(searchParams)
-    })
+    //})
     return () => {
-      clearTimeout(timeout)
+      //clearTimeout(timeout)
     }
   }, [setSearchParams, searchParams]);
 
