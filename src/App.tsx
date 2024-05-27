@@ -21,7 +21,7 @@ import {
   createBrowserRouter,
   RouterProvider,
   useSearchParams,
-} from "./react-router/react-router.tsx";
+} from "react-router-dom";
 
 // import {
 //   createBrowserRouter,
@@ -150,6 +150,7 @@ export const HomePage = () => {
     return () => {
       disposer();
       clearTimeout(timeoutId);
+      clearTimeout(timeout.current)
     }
   }, [apiRef, page, setPaginationModel]);
 

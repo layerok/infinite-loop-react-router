@@ -53,9 +53,7 @@ type Disposer = () => void;
 
 export type GridState = {
   dimensions: GridDimensions;
-  pagination: {
-    paginationModel: GridPaginationModel;
-  }
+  pagination: GridPaginationModel;
 }
 
 export type GridApi = {
@@ -107,8 +105,8 @@ export const DataGridPremiumRaw = forwardRef(function DataGridPremiumRaw(props: 
       const nextState = typeof state === 'function' ? state(apiRef.current.state): state;
       const prevState = apiRef.current.state;
 
-      const prevPaginationModel = prevState.pagination.paginationModel;
-      const nextPaginationModel = nextState.pagination.paginationModel;
+      const prevPaginationModel = prevState.pagination;
+      const nextPaginationModel = nextState.pagination;
 
       if(prevPaginationModel !== nextPaginationModel) {
         onPaginationModelChange?.(nextPaginationModel);
@@ -122,10 +120,8 @@ export const DataGridPremiumRaw = forwardRef(function DataGridPremiumRaw(props: 
       setState,
       state: {
         pagination: {
-          paginationModel: {
-            page: 0,
-            pageSize: 100
-          }
+          page: 0,
+          pageSize: 100
         },
         dimensions: {
           rowHeight: ROW_HEIGHT,
@@ -150,14 +146,13 @@ export const DataGridPremiumRaw = forwardRef(function DataGridPremiumRaw(props: 
 
   useGridPagination(apiRef, props);
 
-
   useGridDimensions(apiRef)
 
   return (
     <GridApiContext.Provider value={apiRef}>
       <GridRootPropsContext.Provider value={props}>
         <GridRoot>
-          <GridVirtualScroller/>
+          <GridBody/>
         </GridRoot>
       </GridRootPropsContext.Provider>
     </GridApiContext.Provider>
@@ -166,13 +161,11 @@ export const DataGridPremiumRaw = forwardRef(function DataGridPremiumRaw(props: 
 
 export const DataGridPremium = React.memo(DataGridPremiumRaw)
 
-
-const GridVirtualScroller = (props: PropsWithChildren) => {
-  const {children} = props;
+const GridBody = () => {
   const apiRef = useGridApiContext();
   const rootProps = useGridRootProps();
   const dimensions = apiRef.current.state.dimensions;
-  const {pageSize, page} = apiRef.current.state.pagination.paginationModel;
+  const {pageSize, page} = apiRef.current.state.pagination;
 
   const rowCount = Math.ceil(rootProps.rowCount || 0);
 
@@ -183,16 +176,13 @@ const GridVirtualScroller = (props: PropsWithChildren) => {
       ...state,
       pagination: {
         ...state.pagination,
-        paginationModel: {
-          ...state.pagination.paginationModel,
-          page
-        }
+        page
       }
     }))
     apiRef.current.forceRerender();
   }, [apiRef])
 
-  const {getContainerProps} = useGridVirtualScroller(apiRef)
+  const {getContainerProps} = useGridBody(apiRef)
 
   return <div
     style={{
@@ -216,7 +206,6 @@ const GridVirtualScroller = (props: PropsWithChildren) => {
         </div>
       ))}
     </div>
-
 
     <div style={{
       ...styles.body
@@ -259,11 +248,8 @@ const GridVirtualScroller = (props: PropsWithChildren) => {
         </div>
       )}
     </div>
-    {children}
   </div>
 }
-
-
 
 const useGridPagination = (apiRef: MutableRefObject<GridApi>,  props: DataGridProps) => {
   const {paginationModel} = props;
@@ -273,24 +259,19 @@ const useGridPagination = (apiRef: MutableRefObject<GridApi>,  props: DataGridPr
       ...state,
       pagination: {
         ...state.pagination,
-        paginationModel: {
-          ...state.pagination.paginationModel,
-          ...model
-        }
+        ...model
       },
     }));
   }, [apiRef])
-  // inside useGridPagination
+
   useEffect(function syncPaginationModelEffect()  {
     if(paginationModel) {
       setPaginationModel(paginationModel);
     }
   }, [setPaginationModel, paginationModel]);
-  // ----
 }
 
-const useGridVirtualScroller = (apiRef: MutableRefObject<GridApi>) => {
-
+const useGridBody = (apiRef: MutableRefObject<GridApi>) => {
   const mainRef = apiRef.current.mainElementRef;
 
   useResizeObserver(mainRef, () => {
@@ -326,36 +307,26 @@ const useGridDimensions = (apiRef: MutableRefObject<GridApi>) => {
   const previousSize = useRef<ElementSize>();
   const rootDimensionsRef = useRef(EMPTY_SIZE);
 
-
-  const handleResize = useCallback(function handleResize(size: ElementSize)  {
-    rootDimensionsRef.current = size;
-    setSavedSize(size);
-  }, []);
-
   const resize = useCallback(function resize()  {
     const element = apiRef.current.mainElementRef.current;
     if (!element) {
       return;
     }
-
     const computedStyle = ownerWindow(element).getComputedStyle(element);
 
-    const height = parseFloat(computedStyle.height) || 0;
-    const width = parseFloat(computedStyle.width) || 0;
-
-    const hasHeightChanged = height !== previousSize.current?.height;
-    const hasWidthChanged = width !== previousSize.current?.width;
-
-    if (!previousSize.current || hasHeightChanged || hasWidthChanged) {
-      const size = { width, height };
-      // publish resize
-      handleResize(size);
-      previousSize.current = size;
+    const nextSize = {
+      width: parseFloat(computedStyle.width) || 0,
+      height: parseFloat(computedStyle.height) || 0
     }
-  }, [apiRef, handleResize]);
+
+    if (!previousSize.current || !areElementSizesEqual(previousSize.current, nextSize)) {
+      rootDimensionsRef.current = nextSize;
+      setSavedSize(nextSize);
+      previousSize.current = nextSize;
+    }
+  }, [apiRef]);
 
   const updateDimensions = useCallback(function updateDimensions()  {
-
     const viewportOuterSize = {
       width: rootDimensionsRef.current.width,
       height: rootDimensionsRef.current.height,
@@ -416,7 +387,8 @@ const styles = {
   },
   body: {
     flexGrow: 1,
-    minHeight: 0
+    minHeight: 0,
+    height: 1
   },
   row: {
     display: "flex",
